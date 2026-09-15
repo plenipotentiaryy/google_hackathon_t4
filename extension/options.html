@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AutoAD settings</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 14px 16px; width: 340px; color: #1f1f1f; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 12px; }
+  input[type="password"], input[type="text"], select { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { margin: 0; font-size: 14px; font-weight: 500; }
+  .hint { color: #5f6368; font-size: 12px; margin: 4px 0 0; }
+  button { font: inherit; padding: 5px 10px; margin-top: 16px; }
+  #saved { color: #1a7f37; font-size: 12px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<h1>AutoAD</h1>
+<div class="row">
+  <input type="checkbox" id="enabled">
+  <label for="enabled">Describe YouTube videos automatically</label>
+</div>
+
+<label for="apiKey">Gemini API key</label>
+<input type="password" id="apiKey" autocomplete="off" spellcheck="false">
+<p class="hint">Stored only in this browser (chrome.storage.local). Create one at aistudio.google.com/apikey.</p>
+
+<label for="videoModel">Video model</label>
+<input type="text" id="videoModel" spellcheck="false">
+
+<label for="ttsModel">Voice model</label>
+<input type="text" id="ttsModel" spellcheck="false">
+
+<label for="voice">Voice</label>
+<select id="voice"></select>
+
+<button id="clear" type="button">Clear cached tracks and audio</button><span id="saved" role="status"></span>
+
+<script src="src/gemini.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

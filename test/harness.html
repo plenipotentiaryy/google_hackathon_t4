@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ADPlayer harness</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 900px; }
+  video { width: 640px; max-width: 100%; display: block; background: #000; }
+  pre { background: #111; color: #ddd; padding: 8px; height: 280px; overflow: auto; font-size: 12px; }
+  .pass { color: #1a7f37; } .fail { color: #cf222e; font-weight: 600; }
+  button { font: inherit; padding: 6px 12px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>ADPlayer harness</h1>
+<p>Tone = "dialogue"; silent gaps at 5–9, 20–24, 30–34 and 45–49 s. AD clips are beeps of known length.</p>
+<video id="v" controls></video>
+<button id="run" disabled>Loading clip…</button> <strong id="status"></strong>
+<h2>Results</h2>
+<ul id="results"></ul>
+<h2>Event log</h2>
+<pre id="log"></pre>
+
+<script src="../extension/src/gemini.js"></script>
+<script src="../extension/src/audio.js"></script>
+<script src="../extension/src/player.js"></script>
+<script>
+const { ADPlayer, encodeWav } = AutoAD;
+const video = document.getElementById('v');
+const logEl = document.getElementById('log');
+const resultsEl = document.getElementById('results');
+const statusEl = document.getElementById('status');
+const runBtn = document.getElementById('run');
+
+function beep(sec, freq) {
+  const rate = 24000;
+  const s = new Int16Array(Math.round(sec * rate));
+  for (let i = 0; i < s.length; i++) s[i] = Math.round(6000 * Math.sin(2 * Math.PI * freq * i / rate));
+  return { url: URL.createObjectURL(new Blob([encodeWav(s, rate)], { type: 'audio/wav' })), duration: sec };
+}
+
+const CUES = [
+  { start: 5, end: 9, text: 'fits: 2.5 s clip in a 4 s gap', sec: 2.5 },
+  { start: 20, end: 24, text: 'speed-up: 4.4 s clip in a 4 s gap', sec: 4.4 },
+  { start: 30, end: 34, text: 'hold: 6 s clip in a 4 s gap', sec: 6.0 },
+  { start: 45, end: 49, text: 'seek target: 3 s clip', sec: 3.0 },
+];
+
+const events = [];
+function log(line) {
+  logEl.textContent += line + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+  console.log(line);
+}
+function onEvent(type, d) {
+  events.push({ type, i: d.i, t: d.t, fit: d.fit, need: d.need, reason: d.reason, vol: video.volume });
+  const fit = d.fit ? `fit ×${d.fit.toFixed(2)} (need ×${d.need.toFixed(2)})` : '';
+  log(`${d.t.toFixed(2).padStart(6)}s  ${type.padEnd(9)} cue ${d.i ?? '-'}  ${fit} ${d.reason || ''}  vol ${video.volume.toFixed(2)}`);
+}
+
+const player = new ADPlayer(video, CUES.map((c) => ({ ...c })), { onEvent });
+player.cues.forEach((c, i) => player.setClip(i, beep(c.sec, 880)));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function waitFor(pred, timeout, label) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      const r = pred();
+      if (r) { clearInterval(iv); resolve(r); }
+      else if (performance.now() - t0 > timeout) { clearInterval(iv); reject(new Error('timed out waiting for ' + label)); }
+    }, 20);
+  });
+}
+const waitEvent = (type, i, since, timeout = 10000) =>
+  waitFor(() => events.slice(since).find((e) => e.type === type && (i == null || e.i === i)), timeout, `${type} cue ${i}`);
+async function seek(t) {
+  const done = new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+  video.currentTime = t;
+  await done;
+}
+
+let passed = 0;
+let total = 0;
+function check(name, ok, detail = '') {
+  total++;
+  if (ok) passed++;
+  const li = document.createElement('li');
+  li.className = ok ? 'pass' : 'fail';
+  li.textContent = `${ok ? 'PASS' : 'FAIL'}  ${name}  ${detail}`;
+  resultsEl.append(li);
+  log(`  ${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`);
+}
+async function test(name, fn) {
+  log(`\n# ${name}`);
+  const since = events.length;
+  try { await fn(since); } catch (e) { check(name, false, e.message); }
+  video.pause();
+  video.playbackRate = 1;
+  await sleep(250);
+}
+const f2 = (x) => x.toFixed(2);
+
+async function run() {
+  runBtn.disabled = true;
+  statusEl.textContent = 'running…';
+  video.volume = 1;
+
+  await test('A fits: 1×, ducked, ends inside the gap', async (s) => {
+    await seek(4.0);
+    await video.play();
+    const st = await waitEvent('start', 0, s);
+    const en = await waitEvent('end', 0, s);
+    check('A1 starts within 0.25 s of gap start', st.t >= 5 && st.t < 5.25, `t=${f2(st.t)}`);
+    check('A2 plays at 1×', st.fit === 1, `fit=${st.fit}`);
+    check('A3 ends before speech resumes', en.t < 9, `t=${f2(en.t)}`);
+    check('A4 video ducked to 50% during clip, restored after', st.vol === 0.5 && en.vol === 1, `${st.vol} → ${en.vol}`);
+  });
+
+  await test('B speed-up, then user pause/resume mid-line', async (s) => {
+    await seek(19.5);
+    await video.play();
+    const st = await waitEvent('start', 1, s);
+    check('B1 sped up to fit (1 < fit < 1.3)', st.fit > 1 && st.fit < 1.3, `fit=${f2(st.fit)}`);
+    check('B2 clip playbackRate = fit', Math.abs(player.active.audio.playbackRate - st.fit) < 0.01, `rate=${f2(player.active.audio.playbackRate)}`);
+    await sleep(1000);
+    video.pause();
+    await sleep(50);
+    const pos = player.active && player.active.audio.currentTime;
+    check('B3 user pause pauses the clip', !!player.active && player.active.audio.paused, `clip at ${f2(pos)}s`);
+    await sleep(1000);
+    check('B4 clip position held while paused', Math.abs(player.active.audio.currentTime - pos) < 0.05);
+    await video.play();
+    const en = await waitEvent('end', 1, s);
+    check('B5 resumed and finished before speech resumes', en.t <= 24, `t=${f2(en.t)}`);
+    check('B6 no hold needed', !events.slice(s).some((e) => e.type === 'hold'));
+  });
+
+  await test('C overrun: capped at maxFit, video held until clip ends', async (s) => {
+    await seek(29.5);
+    await video.play();
+    const st = await waitEvent('start', 2, s);
+    check('C1 capped at ×1.3', st.fit === 1.3 && st.need > 1.3, `need=${f2(st.need)}`);
+    const hold = await waitEvent('hold', 2, s);
+    check('C2 video paused at gap end', hold.t >= 33.85 && hold.t < 34.1, `t=${f2(hold.t)}`);
+    await sleep(100);
+    check('C3 clip keeps playing during hold', video.paused && !!player.active && !player.active.audio.paused);
+    const en = await waitEvent('end', 2, s);
+    await sleep(200);
+    check('C4 video resumes after the clip', !video.paused);
+    check('C5 video did not advance into dialogue', en.t < 34.1, `t=${f2(en.t)}`);
+  });
+
+  await test('D seek: stops clip, back replays, mid-gap skips', async (s) => {
+    await seek(44.5);
+    await video.play();
+    await waitEvent('start', 3, s);
+    await sleep(500);
+    await seek(40);
+    check('D1 seek stops the clip', !player.active && events.slice(s).some((e) => e.type === 'stop' && e.reason === 'seek'));
+    check('D2 clip audio silenced', player.cues[3].audio.paused);
+    const s2 = events.length;
+    const again = await waitEvent('start', 3, s2);
+    check('D3 seeking back replays the line', again.t >= 45 && again.t < 45.25, `t=${f2(again.t)}`);
+    await sleep(300);
+    await seek(46.5);
+    const s3 = events.length;
+    await waitFor(() => video.currentTime >= 49, 6000, 't ≥ 49');
+    check('D4 landing mid-gap (past tolerance) skips the line', !events.slice(s3).some((e) => e.type === 'start'));
+  });
+
+  await test('E playback speed', async (s) => {
+    await seek(4.0);
+    video.playbackRate = 1.5;
+    await video.play();
+    await waitEvent('start', 0, s);
+    check('E1 clip rate follows 1.5× video', Math.abs(player.active.audio.playbackRate - 1.5) < 0.01, `rate=${f2(player.active.audio.playbackRate)}`);
+    video.playbackRate = 1;
+    await sleep(50);
+    check('E2 ratechange mid-clip updates the clip', Math.abs(player.active.audio.playbackRate - 1) < 0.01);
+    const en = await waitEvent('end', 0, s);
+    check('E3 ends inside the gap', en.t < 9, `t=${f2(en.t)}`);
+  });
+
+  await test('F suspend (ad) silences; resume re-syncs', async (s) => {
+    await seek(4.6);
+    await video.play();
+    await waitEvent('start', 0, s);
+    player.suspend();
+    check('F1 suspend stops the clip', !player.active && player.cues[0].audio.paused);
+    await waitFor(() => video.currentTime >= 6, 4000, 't ≥ 6');
+    check('F2 nothing starts while suspended', events.slice(s).filter((e) => e.type === 'start').length === 1);
+    player.resume();
+    check('F3 resume skips the passed line', player.next === 1, `next=${player.next}`);
+  });
+
+  statusEl.textContent = `${passed}/${total} passed`;
+  document.title = `ADPlayer harness: ${passed}/${total} passed`;
+  runBtn.disabled = false;
+  runBtn.textContent = 'Run again';
+}
+
+runBtn.addEventListener('click', () => {
+  resultsEl.textContent = '';
+  logEl.textContent = '';
+  passed = total = 0;
+  run();
+});
+
+// Blob URL so seeking works regardless of HTTP range support on the static server.
+fetch('media/clip.mp4').then((r) => r.blob()).then((b) => {
+  video.src = URL.createObjectURL(b);
+  video.addEventListener('loadedmetadata', () => {
+    runBtn.disabled = false;
+    runBtn.textContent = 'Run scripted tests';
+  }, { once: true });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>content.js mock</title>
+<link rel="stylesheet" href="../extension/src/content.css">
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 900px; }
+  #movie_player { position: relative; width: 640px; max-width: 100%; }
+  video { width: 100%; display: block; background: #000; }
+  pre { background: #111; color: #ddd; padding: 8px; height: 240px; overflow: auto; font-size: 12px; }
+  .pass { color: #1a7f37; } .fail { color: #cf222e; font-weight: 600; }
+  button#run { font: inherit; padding: 6px 12px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>content.js on a mock YouTube page</h1>
+<p>Real content.js, player and audio code; stubbed <code>chrome.storage</code>, <code>generateTrack</code> and <code>renderSpeech</code>.</p>
+<div id="movie_player" class="html5-video-player"><video class="html5-main-video" controls></video></div>
+<button id="run" disabled>Loading clip…</button> <strong id="status"></strong>
+<h2>Results</h2>
+<ul id="results"></ul>
+<h2>Log</h2>
+<pre id="log"></pre>
+
+<script src="../extension/src/gemini.js"></script>
+<script src="../extension/src/audio.js"></script>
+<script src="../extension/src/player.js"></script>
+<script>
+// ---- stubs: chrome.storage, Gemini ----
+const store = { apiKey: 'test-key', enabled: true };
+const changeListeners = [];
+const pick = (keys) => {
+  if (keys == null) return { ...store };
+  const out = {};
+  for (const k of [].concat(keys)) if (k in store) out[k] = store[k];
+  return out;
+};
+const notify = (changes) => setTimeout(() => changeListeners.forEach((fn) => fn(changes, 'local')), 0);
+window.chrome = window.chrome || {};
+chrome.storage = {
+  local: {
+    get: async (keys) => pick(keys),
+    set: async (obj) => {
+      const changes = {};
+      for (const [k, v] of Object.entries(obj)) { changes[k] = { oldValue: store[k], newValue: v }; store[k] = v; }
+      notify(changes);
+    },
+    remove: async (keys) => { for (const k of [].concat(keys)) delete store[k]; },
+  },
+  onChanged: { addListener: (fn) => changeListeners.push(fn) },
+};
+
+const CUES = [
+  { start: 5, end: 9, text: 'A woman opens the door.', sec: 2.5 },
+  { start: 20, end: 24, text: 'She walks into the rain.', sec: 3.0 },
+  { start: 30, end: 34, text: 'A taxi pulls up.', sec: 2.0 },
+  { start: 45, end: 49, text: 'Title: THE END.', sec: 2.0 },
+];
+const calls = { gen: [], tts: [] };
+const wait = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
+});
+function beepB64(sec) {
+  const rate = 24000;
+  const s = new Int16Array(Math.round(sec * rate));
+  for (let i = 0; i < s.length; i++) s[i] = Math.round(6000 * Math.sin(2 * Math.PI * 660 * i / rate));
+  const bytes = new Uint8Array(s.buffer);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+AutoAD.generateTrack = async ({ videoUrl, durationSec, signal }) => {
+  calls.gen.push({ videoUrl, durationSec });
+  await wait(1000, signal);
+  return { cues: CUES.map(({ start, end, text }) => ({ start, end, text })), usage: {}, ms: 1000 };
+};
+AutoAD.renderSpeech = async ({ text, voice, signal }) => {
+  calls.tts.push({ text, voice });
+  await wait(150, signal);
+  return { data: beepB64(CUES.find((c) => c.text === text).sec), rate: 24000 };
+};
+
+history.replaceState(null, '', '/watch?v=vidA');
+</script>
+<script src="../extension/src/content.js"></script>
+<script>
+const video = document.querySelector('video');
+const logEl = document.getElementById('log');
+const resultsEl = document.getElementById('results');
+const runBtn = document.getElementById('run');
+const btn = () => document.querySelector('.autoad-btn');
+const line = () => document.querySelector('.autoad-line')?.textContent || '';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function log(s) { logEl.textContent += s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
+function waitFor(pred, timeout, label) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      const r = pred();
+      if (r) { clearInterval(iv); resolve(r); }
+      else if (performance.now() - t0 > timeout) { clearInterval(iv); reject(new Error(`timed out: ${label} (button: "${btn()?.textContent}")`)); }
+    }, 25);
+  });
+}
+async function seek(t) {
+  const done = new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+  video.currentTime = t;
+  await done;
+}
+function navigate(id) {
+  document.dispatchEvent(new Event('yt-navigate-start'));
+  history.pushState(null, '', `/watch?v=${id}`);
+  document.dispatchEvent(new Event('yt-navigate-finish'));
+}
+let passed = 0, total = 0;
+function check(name, ok, detail = '') {
+  total++; if (ok) passed++;
+  const li = document.createElement('li');
+  li.className = ok ? 'pass' : 'fail';
+  li.textContent = `${ok ? 'PASS' : 'FAIL'}  ${name}  ${detail}`;
+  resultsEl.append(li);
+  log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`);
+}
+async function step(name, fn) {
+  log(`\n# ${name}`);
+  try { await fn(); } catch (e) { check(name, false, e.message); }
+}
+
+async function run() {
+  runBtn.disabled = true;
+
+  await step('1 first visit generates, voices and caches', async () => {
+    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 8000, 'AD on');
+    check('1a UI mounted inside #movie_player', btn().closest('#movie_player') !== null);
+    check('1b one video call for vidA', calls.gen.length === 1 && calls.gen[0].videoUrl.endsWith('v=vidA'), JSON.stringify(calls.gen));
+    check('1c duration passed to prompt', Math.round(calls.gen[0].durationSec) === 60, `${calls.gen[0].durationSec}`);
+    check('1d four TTS calls', calls.tts.length === 4, `${calls.tts.length}`);
+    check('1e track and clips cached', !!store['cues:vidA'] && [0, 1, 2, 3].every((i) => store[`tts:vidA:${i}`]));
+    check('1f button is a toggle, pressed', btn().getAttribute('aria-pressed') === 'true');
+  });
+
+  await step('2 playback shows the line in its gap', async () => {
+    await seek(4.2);
+    await video.play();
+    await waitFor(() => line() === CUES[0].text, 3000, 'line 1 shown');
+    check('2a line text shown while speaking', true, `t=${video.currentTime.toFixed(2)}`);
+    await waitFor(() => line() === '', 4000, 'line cleared');
+    check('2b cleared after clip', video.currentTime < 9, `t=${video.currentTime.toFixed(2)}`);
+    video.pause();
+  });
+
+  await step('3 ads suspend AD', async () => {
+    await seek(19.6);
+    document.getElementById('movie_player').classList.add('ad-showing');
+    await video.play();
+    await waitFor(() => video.currentTime >= 21, 3000, 't ≥ 21');
+    check('3a nothing spoken during ad', line() === '');
+    document.getElementById('movie_player').classList.remove('ad-showing');
+    await sleep(300);
+    check('3b line passed during ad is skipped after it', line() === '');
+    video.pause();
+  });
+
+  await step('4 navigating to another video generates for it', async () => {
+    navigate('vidB');
+    await waitFor(() => btn()?.textContent.startsWith('AD · analyzing'), 4000, 'analyzing');
+    check('4a shows analyzing', true, btn().textContent);
+    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 8000, 'AD on for vidB');
+    check('4b second video call for vidB', calls.gen.length === 2 && calls.gen[1].videoUrl.endsWith('v=vidB'));
+  });
+
+  await step('5 navigating back uses the cache', async () => {
+    const ttsBefore = calls.tts.length;
+    navigate('vidA');
+    await sleep(2200);
+    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 4000, 'AD on for vidA');
+    check('5a no new video call', calls.gen.length === 2, `${calls.gen.length}`);
+    check('5b no new TTS calls', calls.tts.length === ttsBefore, `${calls.tts.length - ttsBefore} new`);
+  });
+
+  await step('6 toggle off silences, toggle on resumes', async () => {
+    btn().click();
+    await waitFor(() => btn()?.textContent === 'AD off', 2000, 'AD off');
+    check('6a button shows off', btn().getAttribute('aria-pressed') === 'false');
+    await seek(4.6);
+    await video.play();
+    await waitFor(() => video.currentTime >= 5.4, 3000, 't ≥ 5.4');
+    check('6b nothing spoken while off', line() === '');
+    video.pause();
+    btn().click();
+    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 2000, 'AD on');
+    check('6c back on without regenerating', calls.gen.length === 2);
+  });
+
+  await step('7 voice change re-voices from scratch', async () => {
+    const ttsBefore = calls.tts.length;
+    await chrome.storage.local.set({ voice: 'Kore' });
+    await waitFor(() => btn()?.textContent === 'AD on · 4 lines' && calls.tts.length >= ttsBefore + 4, 6000, 're-voiced');
+    check('7a four new TTS calls with the new voice', calls.tts.slice(ttsBefore).every((c) => c.voice === 'Kore'), `${calls.tts.length - ttsBefore} calls`);
+    check('7b track reused from cache', calls.gen.length === 2);
+  });
+
+  await step('8 leaving the watch page tears down', async () => {
+    document.dispatchEvent(new Event('yt-navigate-start'));
+    history.pushState(null, '', '/feed/subscriptions');
+    document.dispatchEvent(new Event('yt-navigate-finish'));
+    await waitFor(() => document.querySelector('.autoad-ui').hidden, 3000, 'UI hidden');
+    check('8a UI hidden off watch pages', true);
+  });
+
+  document.getElementById('status').textContent = `${passed}/${total} passed`;
+  document.title = `content.js mock: ${passed}/${total} passed`;
+}
+
+runBtn.addEventListener('click', run);
+// Absolute path: the page URL was rewritten to /watch?v=… above.
+fetch('/test/media/clip.mp4').then((r) => r.blob()).then((b) => {
+  video.src = URL.createObjectURL(b);
+  video.addEventListener('loadedmetadata', () => { runBtn.disabled = false; runBtn.textContent = 'Run scripted tests'; }, { once: true });
+});
+</script>
+</body>
+</html>

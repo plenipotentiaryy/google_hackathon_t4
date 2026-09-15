@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "harness",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /private/tmp/claude-501/-Users-lemmoor-Documents-programming-prototype/e95e6fa5-7191-4efb-b3e1-21e54e03d71a/scratchpad/site && exec uv run --no-project python -m http.server 8765 --bind 127.0.0.1"
+      ],
+      "port": 8765
+    }
+  ]
+}

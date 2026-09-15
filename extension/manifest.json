@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "AutoAD",
+  "version": "0.1.0",
+  "description": "Gemini-generated audio description for YouTube, spoken in the video's own silent gaps.",
+  "permissions": ["storage", "unlimitedStorage"],
+  "action": {
+    "default_title": "AutoAD settings",
+    "default_popup": "options.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["src/gemini.js", "src/audio.js", "src/player.js", "src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
