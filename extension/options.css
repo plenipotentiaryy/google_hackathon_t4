@@ -215,3 +215,41 @@ body {
     background: CanvasText;
   }
 }
+/* Toolbar shares the compact spacing and the accessible Gemini logo button. */
+.autoad-ui.autoad-popup {
+  padding: 12px;
+}
+.autoad-popup .autoad-header {
+  margin-bottom: 8px;
+  gap: 4px 8px;
+}
+.autoad-popup .autoad-welcome {
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.autoad-popup .autoad-welcome h2 {
+  font-size: 23px;
+  margin-bottom: 6px;
+}
+.autoad-popup .autoad-eyebrow {
+  margin-bottom: 6px;
+}
+.autoad-popup .autoad-launch {
+  margin-top: 8px;
+}
+.autoad-popup .autoad-connection-status {
+  margin: 8px 0;
+}
+.autoad-popup .autoad-section-title {
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+.autoad-popup fieldset {
+  margin-bottom: 8px;
+}
+.autoad-popup .autoad-connection {
+  padding: 4px 0;
+}
+.autoad-popup footer {
+  padding-top: 6px;
+}

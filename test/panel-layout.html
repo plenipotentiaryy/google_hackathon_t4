@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AutoAD compact layout check</title>
+    <link rel="stylesheet" href="../extension/src/content.css" />
+    <style>
+      body {
+        margin: 24px;
+        background: #ecebf3;
+        font: 14px system-ui;
+        color: #28223c;
+      }
+      #results {
+        max-width: 650px;
+        white-space: pre-wrap;
+      }
+      button {
+        padding: 8px;
+      }
+      h1 {
+        font-size: 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AutoAD compact panel</h1>
+    <p>Layout-only fixture. No API, microphone or extension permissions.</p>
+    <button id="run">Check all states</button
+    ><button id="long">Long answer</button>
+    <pre id="results"></pre>
+    <script src="../extension/src/gemini.js"></script>
+    <script src="../extension/src/settings.js"></script>
+    <script src="../extension/src/panel.js"></script>
+    <script src="panel-layout.js"></script>
+  </body>
+</html>

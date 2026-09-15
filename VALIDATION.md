@@ -19,3 +19,7 @@ No private key or real user microphone audio was used in these checks.
 ## Toolbar design follow-up (0.2.1)
 
 The toolbar popup and standalone preferences now share the video panel's stylesheet and controls. Browser visual checks used `test/options-preview.html` with simulated storage for: saved key, first launch without a key, and unavailable storage. Changed the speed radio and verified its checked state plus save announcement. No real key or restricted Chrome page was used. Actual installed popup refresh must be performed in Chrome.
+
+## Compact layout follow-up (0.2.3)
+
+Local browser layout fixture: `test/panel-layout.html`. Checked at 1366×768 and 1440×900 CSS pixels: 410 px panel width; off/preparing/ad/ready/short-answer states measured 567.1 px tall, error state 614.1 px. No outer scrolling; Connection and storage remained visible. Long answer measured 610.5 px with only its text area scrolling. Gemini target measured 48×48 px; accessible name is “Open Gemini in a new tab”; keyboard focus outline measured 3 px. Popup preview also exposes the same logo and accessible name. Temporary viewport overrides were reset after checking. These are local layout checks, not a new real API validation.
