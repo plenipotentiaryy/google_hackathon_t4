@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AutoAD popup preview</title>
+    <style>
+      body {
+        margin: 30px;
+        background: #eeedf4;
+        font: 14px system-ui;
+        color: #29243e;
+      }
+      button {
+        padding: 10px;
+        margin-right: 8px;
+      }
+      iframe {
+        display: block;
+        width: 410px;
+        max-width: 100%;
+        height: 600px;
+        border: 1px solid #c8c0dd;
+        border-radius: 14px;
+        margin-top: 20px;
+        background: white;
+      }
+      p {
+        max-width: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AutoAD — toolbar popup</h1>
+    <p>
+      Local visual check with simulated extension storage. No real API key or
+      network calls.
+    </p>
+    <button id="empty">No API key</button><button id="saved">Key saved</button
+    ><button id="unavailable">Storage unavailable</button
+    ><iframe title="AutoAD popup"></iframe>
+    <script src="options-preview.js"></script>
+  </body>
+</html>

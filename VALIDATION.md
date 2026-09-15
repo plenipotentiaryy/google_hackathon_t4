@@ -15,3 +15,7 @@ Implementation based on upstream `92a7730`. Local validation date: 2026-09-15.
 - Model factual accuracy, video gap accuracy, speech quality/style fidelity and latency under live quota.
 
 No private key or real user microphone audio was used in these checks.
+
+## Toolbar design follow-up (0.2.1)
+
+The toolbar popup and standalone preferences now share the video panel's stylesheet and controls. Browser visual checks used `test/options-preview.html` with simulated storage for: saved key, first launch without a key, and unavailable storage. Changed the speed radio and verified its checked state plus save announcement. No real key or restricted Chrome page was used. Actual installed popup refresh must be performed in Chrome.

@@ -1,45 +1,137 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>AutoAD settings</title>
-<style>
-  body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 14px 16px; width: 340px; color: #1f1f1f; }
-  h1 { font-size: 16px; margin: 0 0 10px; }
-  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 12px; }
-  input[type="password"], input[type="text"], select { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; }
-  .row { display: flex; align-items: center; gap: 8px; }
-  .row label { margin: 0; font-size: 14px; font-weight: 500; }
-  .hint { color: #5f6368; font-size: 12px; margin: 4px 0 0; }
-  button { font: inherit; padding: 5px 10px; margin-top: 16px; }
-  #saved { color: #1a7f37; font-size: 12px; margin-left: 8px; }
-</style>
-</head>
-<body>
-<h1>AutoAD connection</h1><p class="hint">Use the AutoAD panel on YouTube to start descriptions and adjust speech preferences.</p>
-<div class="row">
-  <input type="checkbox" id="enabled">
-  <label for="enabled">Enable audio descriptions</label>
-</div>
-
-<label for="apiKey">Gemini API key</label>
-<input type="password" id="apiKey" autocomplete="off" spellcheck="false">
-<p class="hint">Stored only in this browser (chrome.storage.local). Create one at aistudio.google.com/apikey.</p>
-
-<label for="videoModel">Video model</label>
-<input type="text" id="videoModel" spellcheck="false">
-
-<label for="ttsModel">Voice model</label>
-<input type="text" id="ttsModel" spellcheck="false">
-
-<label for="voice">Voice</label>
-<select id="voice"></select>
-
-<button id="clear" type="button">Clear cached tracks and audio</button><span id="saved" role="status"></span>
-
-<script src="src/gemini.js"></script>
-<script src="src/settings.js"></script>
-<script src="src/cache.js"></script>
-<script src="options.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AutoAD — preferences</title>
+    <link rel="stylesheet" href="src/content.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="autoad-ui autoad-popup" aria-label="AutoAD preferences">
+      <header class="autoad-header">
+        <h1>
+          <svg aria-hidden="true" width="32" height="32" viewBox="0 0 32 32">
+            <g stroke="currentColor" stroke-width="3.5" stroke-linecap="round">
+              <path d="M4 14v4M10 9v14M16 4v24M22 9v14M28 14v4" />
+            </g></svg
+          >AutoAD
+        </h1>
+        <a
+          class="autoad-gemini"
+          href="https://gemini.google.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >✦ Open Gemini</a
+        >
+        <p class="autoad-tagline">Hear what happens.</p>
+      </header>
+      <section
+        class="autoad-card autoad-welcome"
+        aria-labelledby="welcome-title"
+      >
+        <span class="autoad-eyebrow">YOUR VIDEO COMPANION</span>
+        <h2 id="welcome-title">A clearer picture.<br />Through sound.</h2>
+        <p>
+          Open a YouTube video to listen to descriptions and ask about the
+          scene.
+        </p>
+        <a
+          class="autoad-launch"
+          href="https://www.youtube.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Open YouTube <span aria-hidden="true">↗</span></a
+        >
+      </section>
+      <div
+        class="autoad-connection-status"
+        role="status"
+        id="connection-status"
+      >
+        Loading preferences…
+      </div>
+      <p id="storage-error" class="autoad-error" role="alert" hidden></p>
+      <form id="connection-form" class="autoad-setup" hidden>
+        <label for="setup-key">Connect Gemini</label>
+        <p class="autoad-hint">
+          Add your API key once to start audio descriptions.
+        </p>
+        <input
+          id="setup-key"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Gemini API key"
+        />
+        <button class="autoad-primary" type="submit">Save API key</button>
+      </form>
+      <section aria-labelledby="preferences-title">
+        <div class="autoad-section-title">
+          <h2 id="preferences-title">Make it yours</h2>
+          <span>Saved automatically</span>
+        </div>
+        <div id="preferences"></div>
+        <fieldset>
+          <legend>Voice</legend>
+          <select
+            id="voice"
+            data-setting="voice"
+            aria-label="Narration voice"
+          ></select>
+          <p class="autoad-hint">Preview voices in the panel on your video.</p>
+        </fieldset>
+        <div id="tone-group"></div>
+      </section>
+      <details id="connection-details" class="autoad-connection">
+        <summary>Connection and storage</summary>
+        <label for="apiKey">Gemini API key</label
+        ><input
+          id="apiKey"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Replace saved API key"
+        />
+        <button id="save-key" type="button">Update API key</button>
+        <p class="autoad-hint">
+          Stored in this browser. Your key is never included in copied
+          discussion context.
+        </p>
+        <div class="autoad-models">
+          <label for="videoModel">Video model</label
+          ><input
+            id="videoModel"
+            data-setting="videoModel"
+            type="text"
+            spellcheck="false"
+          />
+          <label for="ttsModel">Voice model</label
+          ><input
+            id="ttsModel"
+            data-setting="ttsModel"
+            type="text"
+            spellcheck="false"
+          />
+          <label for="liveModel">Live model</label
+          ><input
+            id="liveModel"
+            data-setting="liveModel"
+            type="text"
+            spellcheck="false"
+          />
+        </div>
+        <button id="clear" type="button">Clear cached descriptions</button>
+      </details>
+      <footer>
+        <p id="saved" role="status" aria-live="polite">
+          Your preferences apply to AutoAD on YouTube.
+        </p>
+      </footer>
+    </main>
+    <script src="src/gemini.js"></script>
+    <script src="src/settings.js"></script>
+    <script src="src/cache.js"></script>
+    <script src="options.js"></script>
+  </body>
 </html>

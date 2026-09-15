@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoAD",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Gemini-generated audio description for YouTube, spoken in the video's own silent gaps.",
   "permissions": [
     "storage",
