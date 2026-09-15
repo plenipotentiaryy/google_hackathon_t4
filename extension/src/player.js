@@ -10,7 +10,15 @@
     constructor(video, cues, opts = {}) {
       this.video = video;
       this.cues = cues;
-      this.opts = { margin: TIMING.playMargin, maxFit: TIMING.maxFit, lateTolerance: 0.75, duck: 0.5, overrun: 'hold', ...opts };
+      this.opts = {
+        margin: TIMING.playMargin,
+        maxFit: TIMING.maxFit,
+        lateTolerance: 0.75,
+        duck: 0.5,
+        overrun: "hold",
+        speed: 1,
+        ...opts,
+      };
       this.onEvent = opts.onEvent || (() => {});
       this.next = 0;
       this.active = null; // {i, cue, audio, fit}
@@ -26,32 +34,43 @@
         seeking: () => this.onSeeking(),
         ratechange: () => this.applyRate(),
         volumechange: () => this.onVolumeChange(),
-        ended: () => this.stopActive('ended'),
+        ended: () => this.stopActive("ended"),
         timeupdate: () => this.tick(),
       };
-      for (const [type, fn] of Object.entries(this.handlers)) video.addEventListener(type, fn);
+      for (const [type, fn] of Object.entries(this.handlers))
+        video.addEventListener(type, fn);
       this.seekTo(video.currentTime);
       if (!video.paused) this.startTimer();
     }
 
     setClip(i, clip) {
       const cue = this.cues[i];
+      if (cue.clip) URL.revokeObjectURL(cue.clip.url);
+      if (cue.audio) {
+        cue.audio.pause();
+        cue.audio.src = "";
+      }
       cue.clip = clip;
       cue.audio = new Audio(clip.url);
-      cue.audio.preload = 'auto';
+      cue.audio.preload = "auto";
       cue.audio.preservesPitch = true;
+    }
+
+    setSpeed(speed) {
+      this.opts.speed = speed;
+      this.applyRate();
     }
 
     setEnabled(on) {
       this.enabled = on;
-      if (!on) this.stopActive('disabled');
+      if (!on) this.stopActive("disabled");
       else this.seekTo(this.video.currentTime);
     }
 
     // For ads: the <video> plays other media, so its currentTime is not ours.
     suspend() {
       this.suspended = true;
-      this.stopActive('suspended');
+      this.stopActive("suspended");
     }
 
     resume() {
@@ -60,11 +79,12 @@
     }
 
     destroy() {
-      this.stopActive('destroyed');
+      this.stopActive("destroyed");
       clearInterval(this.timer);
-      for (const [type, fn] of Object.entries(this.handlers)) this.video.removeEventListener(type, fn);
+      for (const [type, fn] of Object.entries(this.handlers))
+        this.video.removeEventListener(type, fn);
       for (const cue of this.cues) {
-        if (cue.audio) cue.audio.src = '';
+        if (cue.audio) cue.audio.src = "";
         if (cue.clip) URL.revokeObjectURL(cue.clip.url);
       }
     }
@@ -84,46 +104,61 @@
       const t = v.currentTime;
       const a = this.active;
       if (a) {
-        if (this.opts.overrun === 'hold' && !v.paused && !a.audio.paused && t >= a.cue.end - 0.05) {
+        if (this.opts.overrun === "drop" && t >= a.cue.end - this.opts.margin) {
+          this.stopActive("gap-ended");
+          return;
+        }
+        if (
+          this.opts.overrun === "hold" &&
+          !v.paused &&
+          !a.audio.paused &&
+          t >= a.cue.end - 0.05
+        ) {
           this.pausedByAD = true;
           v.pause();
-          this.emit('hold', a);
+          this.emit("hold", a);
         }
         return;
       }
       if (v.paused) return;
-      while (this.next < this.cues.length && t > this.cues[this.next].start + this.opts.lateTolerance) {
-        this.emit('missed', { i: this.next, cue: this.cues[this.next] });
+      while (
+        this.next < this.cues.length &&
+        t > this.cues[this.next].start + this.opts.lateTolerance
+      ) {
+        this.emit("missed", { i: this.next, cue: this.cues[this.next] });
         this.next++;
       }
       const cue = this.cues[this.next];
       if (cue && t >= cue.start) {
         const i = this.next++;
-        if (!cue.clip) this.emit('not-ready', { i, cue });
+        if (!cue.clip) this.emit("not-ready", { i, cue });
         else this.start(i, cue, t);
       }
     }
 
     start(i, cue, t) {
       const room = Math.max(0.5, cue.end - t - this.opts.margin);
-      const need = cue.clip.duration / room;
-      if (need > this.opts.maxFit && this.opts.overrun === 'drop') {
-        this.emit('dropped', { i, cue, need });
+      const need = cue.clip.duration / (room * this.opts.speed);
+      if (need > this.opts.maxFit && this.opts.overrun === "drop") {
+        this.emit("dropped", { i, cue, need });
         return;
       }
       const audio = cue.audio;
       const fit = clamp(need, 1, this.opts.maxFit);
-      this.active = { i, cue, audio, fit, need };
+      const active = (this.active = { i, cue, audio, fit, need });
       audio.currentTime = 0;
-      audio.onended = () => this.finish();
+      audio.onended = () => {
+        if (this.active === active) this.finish();
+      };
       this.duck();
       audio.volume = this.ducked ? this.ducked.from : this.video.volume;
       this.applyRate();
       audio.play().catch((err) => {
-        this.emit('error', { i, cue, error: err.message });
+        if (this.active !== active) return;
+        this.emit("error", { i, cue, error: err.message });
         this.finish();
       });
-      this.emit('start', this.active);
+      this.emit("start", this.active);
     }
 
     finish() {
@@ -132,7 +167,7 @@
       a.audio.onended = null;
       this.active = null;
       this.unduck();
-      this.emit('end', a);
+      this.emit("end", a);
       if (this.pausedByAD) {
         this.pausedByAD = false;
         this.video.play();
@@ -147,7 +182,7 @@
       a.audio.currentTime = 0;
       this.active = null;
       this.unduck();
-      this.emit('stop', { ...a, reason });
+      this.emit("stop", { ...a, reason });
     }
 
     seekTo(t) {
@@ -164,7 +199,12 @@
 
     applyRate() {
       const a = this.active;
-      if (a) a.audio.playbackRate = clamp(a.fit * this.video.playbackRate, 0.25, 4);
+      if (a)
+        a.audio.playbackRate = clamp(
+          a.fit * this.opts.speed * this.video.playbackRate,
+          0.25,
+          8,
+        );
     }
 
     // --- video events ---
@@ -174,7 +214,7 @@
       const a = this.active;
       if (a && a.audio.paused && this.enabled && !this.suspended) {
         a.audio.play().catch(() => {});
-        this.emit('resume', a);
+        this.emit("resume", a);
       }
       this.startTimer();
     }
@@ -185,12 +225,12 @@
       const a = this.active;
       if (a && !a.audio.paused) {
         a.audio.pause();
-        this.emit('pause', a);
+        this.emit("pause", a);
       }
     }
 
     onSeeking() {
-      this.stopActive('seek');
+      this.stopActive("seek");
       if (this.pausedByAD) {
         this.pausedByAD = false;
         this.video.play();
@@ -215,7 +255,8 @@
     }
 
     onVolumeChange() {
-      if (this.ducked && Math.abs(this.video.volume - this.ducked.to) > 0.01) this.ducked = null;
+      if (this.ducked && Math.abs(this.video.volume - this.ducked.to) > 0.01)
+        this.ducked = null;
     }
 
     emit(type, data) {

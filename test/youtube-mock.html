@@ -5,7 +5,7 @@
 <title>content.js mock</title>
 <link rel="stylesheet" href="../extension/src/content.css">
 <style>
-  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 900px; }
+  body { padding-right:440px; font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 900px; }
   #movie_player { position: relative; width: 640px; max-width: 100%; }
   video { width: 100%; display: block; background: #000; }
   pre { background: #111; color: #ddd; padding: 8px; height: 240px; overflow: auto; font-size: 12px; }
@@ -16,7 +16,7 @@
 <body>
 <h1>content.js on a mock YouTube page</h1>
 <p>Real content.js, player and audio code; stubbed <code>chrome.storage</code>, Gemini video calls and speech rendering.</p>
-<div id="movie_player" class="html5-video-player"></div>
+<div id="movie_player" class="html5-video-player" style="height:330px;background:linear-gradient(135deg,#e5dcce,#536858);color:white;display:grid;place-items:center;border-radius:14px"><div><h2>AutoAD · Local demo</h2><p>Simulated video / scripted answers / test tones</p><button id="demo-play">Play / Pause demo</button><span id="demo-time">00:00</span></div></div>
 <button id="run">Run scripted tests</button> <strong id="status"></strong>
 <h2>Results</h2>
 <ul id="results"></ul>
@@ -24,13 +24,17 @@
 <pre id="log"></pre>
 
 <script src="../extension/src/gemini.js"></script>
+<script src="../extension/src/settings.js"></script>
+<script src="../extension/src/cache.js"></script>
+<script src="../extension/src/coordinator.js"></script>
+<script src="../extension/src/panel.js"></script>
 <script src="../extension/src/live.js"></script>
 <script src="../extension/src/audio.js"></script>
 <script src="../extension/src/player.js"></script>
 <script src="fake-video.js"></script>
 <script>
 // ---- stubs: chrome.storage, Gemini ----
-const store = { apiKey: 'test-key', enabled: true };
+const store = { apiKey: 'test-key', enabled: false };
 const changeListeners = [];
 const pick = (keys) => {
   if (keys == null) return { ...store };
@@ -103,6 +107,28 @@ AutoAD.describeMoment = async ({ currentSec, question, conversation, signal }) =
   return `At ${currentSec.toFixed(1)} seconds, the woman is holding a red umbrella.`;
 };
 
+let denyMicrophone = false, microphoneStopped = 0, voiceDelay = 30;
+Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value: async () => {
+  if(denyMicrophone) throw new DOMException('Permission denied','NotAllowedError');
+  return {getTracks:()=>[{stop:()=>microphoneStopped++}]};
+}});
+class MockContext {
+ constructor(){this.state='running';this.currentTime=0;this.destination={};this.sampleRate=48000;}
+ async resume(){} async close(){this.state='closed';}
+ createMediaStreamSource(){return {connect(){},disconnect(){}};}
+ createScriptProcessor(){return {connect(){},disconnect(){}};}
+ createGain(){return {gain:{value:1},connect(){},disconnect(){}};}
+ createBuffer(_n,length,rate){return {duration:length/rate,copyToChannel(){}};}
+ createBufferSource(){let timer;return {playbackRate:{value:1},connect(){},stop(){clearTimeout(timer);},start(){timer=setTimeout(()=>this.onended?.(),100);}};}
+}
+window.AudioContext=MockContext;
+let liveCalls=0, liveClosed=0;
+AutoAD.LiveVoice.connect=async options=>{
+ liveCalls++;await wait(voiceDelay,options.signal);
+ return {close(){liveClosed++;},send(message){if(message.realtimeInput?.activityEnd){setTimeout(()=>options.onMessage({serverContent:{inputTranscription:{text:'What is she wearing?'},outputTranscription:{text:'She is wearing a red coat.'},modelTurn:{parts:[{inlineData:{mimeType:'audio/pcm;rate=24000',data:beepB64(0.1)}}]},turnComplete:true}}),50);}}};
+};
+document.getElementById('demo-play').onclick=()=>testVideo.paused?testVideo.play():testVideo.pause();
+testVideo.addEventListener('timeupdate',()=>{document.getElementById('demo-time').textContent=AutoAD.formatTime(testVideo.currentTime);});
 history.replaceState(null, '', '/watch?v=vidA');
 </script>
 <script src="../extension/src/content.js"></script>
@@ -115,7 +141,7 @@ const btn = () => document.querySelector('.autoad-btn');
 const describeBtn = () => document.querySelector('.autoad-ask');
 const askBtn = () => document.querySelector('.autoad-send');
 const questionInput = () => document.querySelector('.autoad-question');
-const answer = () => document.querySelector('.autoad-answer')?.textContent || '';
+const answer = () => document.querySelector('.autoad-line')?.textContent || '';
 const line = () => document.querySelector('.autoad-line')?.textContent || '';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function log(s) { logEl.textContent += s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
@@ -153,119 +179,74 @@ async function step(name, fn) {
   try { await fn(); } catch (e) { check(name, false, e.message); }
 }
 
-async function run() {
-  runBtn.disabled = true;
-
-  await step('1 first visit generates, voices and caches', async () => {
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 8000, 'AD on');
-    check('1a UI mounted inside #movie_player', btn().closest('#movie_player') !== null);
-    check('1b one video call for vidA', calls.gen.length === 1 && calls.gen[0].videoUrl.endsWith('v=vidA'), JSON.stringify(calls.gen));
-    check('1c duration passed to prompt', Math.round(calls.gen[0].durationSec) === 60, `${calls.gen[0].durationSec}`);
-    check('1d four TTS calls', calls.tts.length === 4, `${calls.tts.length}`);
-    await waitFor(() => store['scene-index:vidA']?.version === AutoAD.SCENE_INDEX_VERSION, 3000, 'detailed scene index cache');
-    const cachePrefix = `tts:${AutoAD.TTS_CACHE_VERSION}:${AutoAD.DEFAULTS.ttsModel}:${AutoAD.DEFAULTS.voice}:vidA:`;
-    check('1e versioned track and clips cached', store['cues:vidA']?.version === AutoAD.TRACK_CACHE_VERSION && [0, 1, 2, 3].every((i) => store[`${cachePrefix}${i}`]));
-    check('1g detailed scene index cached', store['scene-index:vidA']?.scenes?.[0]?.description.includes('red track'));
-    check('1f button is a toggle, pressed', btn().getAttribute('aria-pressed') === 'true');
-  });
-
-  await step('2 playback shows the line in its gap', async () => {
-    await seek(4.2);
-    await video.play();
-    await waitFor(() => describeBtn().disabled, 1000, 'scene controls disabled during playback');
-    check('2a scene questions disabled while playing', describeBtn().disabled);
-    await waitFor(() => line() === CUES[0].text, 3000, 'line 1 shown');
-    check('2b line text shown while speaking', true, `t=${video.currentTime.toFixed(2)}`);
-    await waitFor(() => line() === '', 4000, 'line cleared');
-    check('2c cleared after clip', video.currentTime < 9, `t=${video.currentTime.toFixed(2)}`);
-    video.pause();
-    await waitFor(() => !describeBtn().disabled, 1000, 'scene controls enabled after pause');
-    check('2d scene questions enabled after pause', !describeBtn().disabled);
-  });
-
-  await step('3 paused-scene questions use the current scene and retain follow-up context', async () => {
-    questionInput().value = 'What is she holding?';
-    askBtn().click();
-    await waitFor(() => calls.moment.length === 1 && answer().includes('red umbrella') && !askBtn().disabled, 3000, 'first scene answer');
-    check('3a asks about the paused timestamp', Math.abs(calls.moment[0].currentSec - video.currentTime) < 0.1);
-    check('3b shows the answer', answer().includes('red umbrella'));
-    questionInput().value = 'What happened just before this?';
-    askBtn().click();
-    await waitFor(() => calls.moment.length === 2, 3000, 'follow-up scene answer');
-    check('3c retains the prior question for a follow-up', calls.moment[1].conversation.length === 1 && calls.moment[1].conversation[0].question === 'What is she holding?');
-  });
-
-  await step('4 ads suspend AD', async () => {
-    await seek(19.6);
-    document.getElementById('movie_player').classList.add('ad-showing');
-    await video.play();
-    await waitFor(() => video.currentTime >= 21, 3000, 't ≥ 21');
-    check('4a nothing spoken during ad', line() === '');
-    document.getElementById('movie_player').classList.remove('ad-showing');
-    await sleep(300);
-    check('4b line passed during ad is skipped after it', line() === '');
-    video.pause();
-  });
-
-  await step('5 navigating to another video generates for it', async () => {
-    navigate('vidB');
-    await waitFor(() => btn()?.textContent.startsWith('AD · analyzing'), 4000, 'analyzing');
-    check('5a shows analyzing', true, btn().textContent);
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 8000, 'AD on for vidB');
-    check('5b second video and scene-index calls for vidB', calls.gen.length === 2 && calls.gen[1].videoUrl.endsWith('v=vidB') && calls.scene.length === 2 && calls.scene[1].videoUrl.endsWith('v=vidB'));
-  });
-
-  await step('6 navigating back uses the cache', async () => {
-    const ttsBefore = calls.tts.length;
-    navigate('vidA');
-    await sleep(2200);
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 4000, 'AD on for vidA');
-    check('6a no new video or scene-index call', calls.gen.length === 2 && calls.scene.length === 2, `${calls.gen.length} / ${calls.scene.length}`);
-    check('6b no new TTS calls', calls.tts.length === ttsBefore, `${calls.tts.length - ttsBefore} new`);
-  });
-
-  await step('7 toggle off silences, toggle on resumes', async () => {
-    btn().click();
-    await waitFor(() => btn()?.textContent === 'AD off', 2000, 'AD off');
-    check('7a button shows off', btn().getAttribute('aria-pressed') === 'false');
-    await seek(4.6);
-    await video.play();
-    await waitFor(() => video.currentTime >= 5.4, 3000, 't ≥ 5.4');
-    check('7b nothing spoken while off', line() === '');
-    video.pause();
-    btn().click();
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines', 2000, 'AD on');
-    check('7c back on without regenerating', calls.gen.length === 2);
-  });
-
-  await step('8 voice change re-voices from scratch', async () => {
-    const ttsBefore = calls.tts.length;
-    await chrome.storage.local.set({ voice: 'Kore' });
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines' && calls.tts.length >= ttsBefore + 4, 6000, 're-voiced');
-    check('8a four new TTS calls with the new voice', calls.tts.slice(ttsBefore).every((c) => c.voice === 'Kore'), `${calls.tts.length - ttsBefore} calls`);
-    check('8b track reused from cache', calls.gen.length === 2);
-  });
-
-  await step('9 changing the video model regenerates the track', async () => {
-    const genBefore = calls.gen.length;
-    await chrome.storage.local.set({ videoModel: 'test-video-model-v2' });
-    await waitFor(() => btn()?.textContent === 'AD on · 4 lines' && calls.gen.length === genBefore + 1, 6000, 'regenerated track');
-    check('9a video model invalidates the track cache', calls.gen.at(-1).model === 'test-video-model-v2');
-  });
-
-  await step('10 leaving the watch page tears down', async () => {
-    document.dispatchEvent(new Event('yt-navigate-start'));
-    history.pushState(null, '', '/feed/subscriptions');
-    document.dispatchEvent(new Event('yt-navigate-finish'));
-    await waitFor(() => document.querySelector('.autoad-ui').hidden, 3000, 'UI hidden');
-    check('10a UI hidden off watch pages', true);
-  });
-
-  document.getElementById('status').textContent = `${passed}/${total} passed`;
-  document.title = `content.js mock: ${passed}/${total} passed`;
+const action=name=>document.querySelector(`[data-action="${name}"]`);
+const status=()=>document.querySelector('.autoad-status')?.textContent||'';
+async function run(){
+ runBtn.disabled=true;
+ await step('Preparation and accessible panel',async()=>{
+  await waitFor(()=>btn(),2000,'panel');
+  check('off until explicit enable; no quota spent',calls.gen.length===0&&btn().textContent==='Enable descriptions');
+  check('panel has landmark name',document.querySelector('aside').getAttribute('aria-label').includes('AutoAD'));
+  check('settings use native radio groups',document.querySelectorAll('.autoad-ui fieldset').length===5);
+  check('live status separate from spoken answer',document.querySelector('.autoad-status').getAttribute('role')==='status'&&!document.querySelector('.autoad-line').hasAttribute('aria-live'));
+  await video.play();btn().click();
+  check('enable pauses video immediately',video.paused);
+  await waitFor(()=>status().startsWith('Ready'),5000,'ready');
+  check('ready keeps video paused',video.paused);
+  check('video analyzed once; scene indexed once',calls.gen.length===1&&calls.scene.length===1);
+  check('persisted complete audio exists',Object.entries(store).some(([k,v])=>k.startsWith('autoad:v3:audio:')&&v.complete));
+  btn().click();check('continue starts video',!video.paused);
+ });
+ await step('Text question, replay and follow-up',async()=>{
+  video.currentTime=4;await video.play();questionInput().value='What is she holding?';askBtn().click();
+  check('question pauses playing video',video.paused);
+  await waitFor(()=>answer().includes('red umbrella'),3000,'answer');
+  await waitFor(()=>status()==='Video paused',3000,'speech completed');
+  check('answer does not auto-resume',video.paused);
+  const n=calls.tts.length;action('repeat').click();await sleep(800);check('repeat does not call TTS',calls.tts.length===n);
+  questionInput().value='What color is it?';askBtn().click();await waitFor(()=>calls.moment.length===2,2000,'follow-up');
+  check('follow-up receives earlier conversation',calls.moment[1].conversation.length===1);
+  btn().click();check('continue resumes during pending answer',!video.paused);await sleep(300);check('late answer does not stop video',!video.paused);
+ });
+ await step('Settings and cache',async()=>{
+  video.pause();const n=calls.tts.length;
+  document.querySelector('input[name="autoad-speed"][value="1.5"]').click();await sleep(250);
+  check('speed changes saved without TTS',store.speed===1.5&&calls.tts.length===n);
+  const gen=calls.gen.length;const select=document.querySelector('[data-setting=voice]');select.value='Kore';select.dispatchEvent(new Event('change',{bubbles:true}));
+  await waitFor(()=>calls.tts.length>=n+4,5000,'new voice');
+  check('voice change reuses text analysis',calls.gen.length===gen);
+  check('new voice passed to TTS',calls.tts.slice(n).every(c=>c.voice==='Kore'));
+  await waitFor(()=>status().startsWith('Ready'),3000,'ready again');
+  await waitFor(()=>Object.entries(store).filter(([k,v])=>k.startsWith('autoad:v3:audio:')&&v.complete&&CUES.some(c=>c.text===v.value.text)).length>=8,3000,'all original and changed-voice audio committed');
+  const total=calls.tts.length;btn().click();btn().click();check('pause descriptions leaves video playing',!video.paused);
+  btn().click();await waitFor(()=>status().startsWith('Ready'),2000,'cache ready');check('re-enable reuses cached audio',calls.tts.length===total);
+ });
+ await step('Seek and advertisement cancellation',async()=>{
+  questionInput().value='Describe it';askBtn().click();video.currentTime=25;await sleep(400);
+  check('seek suppresses late response',answer().includes('Position changed'));
+  const mp=document.querySelector('#movie_player');mp.classList.add('ad-showing');await sleep(40);
+  check('ad suspends questions and narration',status().startsWith('Advertisement')&&askBtn().disabled);
+  mp.classList.remove('ad-showing');await sleep(40);check('questions recover after ad',!askBtn().disabled);
+ });
+ await step('Voice microphone and complete streamed replay',async()=>{
+  await video.play();action('voice').click();check('voice question pauses video',video.paused);
+  await waitFor(()=>status().startsWith('Listening'),2000,'microphone');
+  action('voice').click();check('Stop & send closes microphone',microphoneStopped>0);
+  await waitFor(()=>status()==='Video paused',2000,'voice answer');check('voice transcript displayed',answer().includes('red coat'));
+  const n=liveCalls;action('repeat').click();await sleep(250);check('voice replay uses saved PCM',liveCalls===n);
+  denyMicrophone=true;action('voice').click();await waitFor(()=>status()==='Needs attention',2000,'permission error');
+  check('permission failure has retry and continue',btn().textContent==='Retry'&&!action('continue').hidden);
+  denyMicrophone=false;action('continue').click();check('continue after mic failure works',!video.paused);
+  voiceDelay=600;action('voice').click();await sleep(40);btn().click();await sleep(700);
+  check('continue during microphone setup cancels without new recording',!video.paused&&!status().startsWith('Listening'));
+ });
+ await step('Navigation and context reset',async()=>{
+  navigate('vidB');await waitFor(()=>btn()?.textContent==='Enable descriptions',3000,'new video');
+  check('new video needs explicit enable',calls.gen.length===1);
+  document.dispatchEvent(new Event('yt-navigate-start'));history.pushState(null,'','/feed/subscriptions');document.dispatchEvent(new Event('yt-navigate-finish'));await sleep(700);
+  check('leaving video hides panel',document.querySelector('.autoad-ui').hidden);
+ });
+ video.pause();document.getElementById('status').textContent=`${passed}/${total} passed`;document.title=`AutoAD integration: ${passed}/${total} passed`;
 }
-
-runBtn.addEventListener('click', run);
-</script>
-</body>
-</html>
+runBtn.addEventListener('click',run);
+</script></body></html>

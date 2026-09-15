@@ -16,10 +16,10 @@
 </style>
 </head>
 <body>
-<h1>AutoAD</h1>
+<h1>AutoAD connection</h1><p class="hint">Use the AutoAD panel on YouTube to start descriptions and adjust speech preferences.</p>
 <div class="row">
   <input type="checkbox" id="enabled">
-  <label for="enabled">Describe YouTube videos automatically</label>
+  <label for="enabled">Enable audio descriptions</label>
 </div>
 
 <label for="apiKey">Gemini API key</label>
@@ -38,6 +38,8 @@
 <button id="clear" type="button">Clear cached tracks and audio</button><span id="saved" role="status"></span>
 
 <script src="src/gemini.js"></script>
+<script src="src/settings.js"></script>
+<script src="src/cache.js"></script>
 <script src="options.js"></script>
 </body>
 </html>

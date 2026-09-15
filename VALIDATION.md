@@ -1,0 +1,17 @@
+# Validation — AutoAD accessible panel
+
+Implementation based on upstream `92a7730`. Local validation date: 2026-09-15.
+
+- Node suite: **18/18 passed**. Run `npm test`; covers existing request/Live transport tests plus cancellation, cache persistence/coalescing/eviction/failures, settings, prompt delivery, late playback rejection and speed.
+- Browser integration: **32/32 passed** on the local fixture through the Codex in-app Chromium browser. Includes explicit enable/preparation, manual continue, questions during playback, follow-up context, replay without requests, cached re-enable, voice changes, cancellation after seek, ad suspension, mocked microphone failure, streamed PCM replay and navigation teardown.
+- Standalone player: **25/25 passed** in the browser fixture (real audio tones and simulated video clock). Legacy hold mode is tested here; production content code selects drop mode.
+- Accessibility tree exposes panel name, labels, checked radio states, expanded/collapsed state and status regions. Text answers are not automatically announced over their audio.
+
+## Not yet verified
+
+- Real Gemini API / microphone end-to-end: no project API key was configured in the environment or local `.env` during implementation.
+- Native VoiceOver spoken navigation and Windows Narrator spoken navigation: accessibility structure verified, auditory OS-specific acceptance still pending. Windows is not available on this Mac.
+- Real YouTube extension installation, layout across YouTube variants, fullscreen/ad transitions and API permissions. Mock page behavior is not proof of these integrations.
+- Model factual accuracy, video gap accuracy, speech quality/style fidelity and latency under live quota.
+
+No private key or real user microphone audio was used in these checks.
