@@ -13,9 +13,8 @@
 </head>
 <body>
 <h1>ADPlayer harness</h1>
-<p>Tone = "dialogue"; silent gaps at 5–9, 20–24, 30–34 and 45–49 s. AD clips are beeps of known length.</p>
-<video id="v" controls></video>
-<button id="run" disabled>Loading clip…</button> <strong id="status"></strong>
+<p>Simulated 60-second video timeline. Silent gaps are 5–9, 20–24, 30–34 and 45–49 s. AD clips are beeps of known length.</p>
+<button id="run">Run scripted tests</button> <strong id="status"></strong>
 <h2>Results</h2>
 <ul id="results"></ul>
 <h2>Event log</h2>
@@ -24,9 +23,10 @@
 <script src="../extension/src/gemini.js"></script>
 <script src="../extension/src/audio.js"></script>
 <script src="../extension/src/player.js"></script>
+<script src="fake-video.js"></script>
 <script>
 const { ADPlayer, encodeWav } = AutoAD;
-const video = document.getElementById('v');
+const video = new FakeVideo({ duration: 60 });
 const logEl = document.getElementById('log');
 const resultsEl = document.getElementById('results');
 const statusEl = document.getElementById('status');
@@ -207,14 +207,6 @@ runBtn.addEventListener('click', () => {
   run();
 });
 
-// Blob URL so seeking works regardless of HTTP range support on the static server.
-fetch('media/clip.mp4').then((r) => r.blob()).then((b) => {
-  video.src = URL.createObjectURL(b);
-  video.addEventListener('loadedmetadata', () => {
-    runBtn.disabled = false;
-    runBtn.textContent = 'Run scripted tests';
-  }, { once: true });
-});
 </script>
 </body>
 </html>

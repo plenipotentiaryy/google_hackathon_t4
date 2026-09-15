@@ -9,13 +9,23 @@
     voice: 'Charon',
   };
 
+  // Increment these whenever a prompt or output-affecting TTS instruction changes.
+  // They make stale chrome.storage entries ineligible for reuse.
+  const TRACK_CACHE_VERSION = 'en-track-v2-dense';
+  const TTS_CACHE_VERSION = 'en-tts-v1';
+  const SCENE_INDEX_VERSION = 'en-scene-index-v1-detailed';
+
   // Shared by the prompt (word budget), the player (fit) and the probe (report).
   const TIMING = {
     wordsPerSec: 2.5, // ~150 wpm narrator
-    promptMargin: 0.5, // seconds the prompt reserves at the end of each gap
-    playMargin: 0.3, // seconds the player keeps clear before speech resumes
+    promptMargin: 0.35, // seconds the prompt reserves at the end of each gap
+    playMargin: 0.2, // seconds the player keeps clear before speech resumes
     maxFit: 1.3, // max speed-up applied to a clip that is longer than its gap
   };
+
+  const MIN_GAP_SECONDS = 1.25;
+  const MIN_CUE_WORDS = 2;
+  const MOMENT_CONTEXT_SECONDS = 8;
 
   const TTS_DIRECTION = 'Read as a calm, clear audio-description narrator at a brisk, even pace: ';
 
@@ -39,21 +49,43 @@
     required: ['cues'],
   };
 
+  const SCENE_SCHEMA = {
+    type: 'object',
+    properties: {
+      scenes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Beginning of this interval, MM:SS.s' },
+            end: { type: 'string', description: 'End of this interval, MM:SS.s' },
+            description: { type: 'string', description: 'Detailed, evidence-based visual description in English' },
+            visible_text: { type: 'string', description: 'Exact readable on-screen text, or empty if none' },
+          },
+          required: ['start', 'end', 'description', 'visible_text'],
+        },
+      },
+    },
+    required: ['scenes'],
+  };
+
   function buildPrompt(durationSec) {
     const wps = TIMING.wordsPerSec;
     const m = TIMING.promptMargin;
     return [
       'You are a professional audio describer writing an audio-description track for blind and low-vision viewers of this video.',
+      'Write every description in English. Do not translate dialogue and do not use any other language.',
       '',
-      'Listen to the soundtrack and find the gaps: stretches of at least 1.5 seconds where nobody is speaking, narrating or singing lyrics. Music, sound effects and ambience are fine inside a gap.',
+      `Listen to the soundtrack and find the gaps: stretches of at least ${MIN_GAP_SECONDS} seconds where nobody is speaking, narrating or singing lyrics. Music, sound effects and ambience are fine inside a gap.`,
       '',
-      'For each gap, decide whether something visual happens that a listener would miss: actions, people appearing or leaving, scene or location changes, expressions that matter, on-screen text (titles, captions, signs, names). If nothing important is visible, or the sound already makes it obvious, leave that gap out. Prefer fewer, useful cues over describing everything.',
+      'Use every viable gap that carries visual information, not only plot-critical moments. Cover actions, people appearing or leaving, scene or location changes, meaningful expressions, gestures, object changes, and on-screen text (titles, captions, signs, names). Do not repeat facts already made clear by the soundtrack.',
+      'Density target: aim for one useful cue every 6–12 seconds when the video has visual activity. A typical 2-minute video should have roughly 10–18 cues. In dialogue-heavy video, use short 2–5 word action cues in brief gaps rather than omitting visual changes.',
       '',
       'Timing rules (critical: each line is spoken inside its gap and must finish before speech resumes):',
       '- start = the moment speech stops; end = the moment speech resumes (or the video ends). Use the video timeline, format MM:SS.s (e.g. 01:07.5).',
       `- The narrator speaks at about ${Math.round(wps * 60)} words per minute (${wps} words per second).`,
       `- max_words = floor((end - start - ${m}) * ${wps}). Work it out before writing the text.`,
-      '- text must have at most max_words words. If max_words is below 3, skip the gap.',
+      `- text must have at most max_words words. If max_words is below ${MIN_CUE_WORDS}, skip the gap.`,
       '- Cues are in chronological order and never overlap.',
       '',
       'Style: present tense, concise and concrete. Never say "we see" or "the camera shows". Use names only once they have been said or shown; otherwise describe briefly ("a woman in a red coat"). Quote on-screen text exactly.',
@@ -77,6 +109,33 @@
     return { cues: normalizeCues(parsed.cues, durationSec), usage: res.usage, ms: Date.now() - t0 };
   }
 
+  function buildSceneIndexPrompt(durationSec) {
+    return [
+      'Create a very detailed, time-indexed visual scene guide for blind and low-vision viewers and for later question answering about this video.',
+      'Write in English. Use only details that are actually visible; never guess names, motives, colors, or events outside the sampled video.',
+      'Cover the entire video in chronological sections, normally about 6–10 seconds each, and split sooner whenever the shot, setting, people, action, or important visual detail changes. Keep the sections contiguous, non-overlapping, and within the video duration.',
+      'For every section, describe as much useful visual information as the frames support: who is present and their appearance/clothing/position, what each person does, facial expression and gestures, objects and their colors/locations, background and setting, camera or scene changes, and readable on-screen text exactly. Mention small but potentially question-relevant details, not just the main plot action.',
+      'Keep details attached to the interval where they are visible. If a detail cannot be determined from the video, say so rather than filling it in. If a section has no meaningful visual change, still describe the visible state briefly.',
+      durationSec ? `The video is ${formatTime(durationSec)} long; cover from 00:00.0 through ${formatTime(durationSec)}.` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  async function generateSceneIndex({ apiKey, model = DEFAULTS.videoModel, videoUrl, durationSec, signal }) {
+    const t0 = Date.now();
+    const res = await callApi(apiKey, {
+      model,
+      input: [
+        { type: 'video', uri: videoUrl },
+        { type: 'text', text: buildSceneIndexPrompt(durationSec) },
+      ],
+      response_format: { type: 'text', mime_type: 'application/json', schema: SCENE_SCHEMA },
+    }, signal);
+    const text = findContent(res, 'text').map((c) => c.text).join('');
+    if (!text) throw new Error('No scene index output in response: ' + summarize(res));
+    const parsed = JSON.parse(text);
+    return { scenes: normalizeScenes(parsed.scenes, durationSec), usage: res.usage, ms: Date.now() - t0 };
+  }
+
   async function renderSpeech({ apiKey, model = DEFAULTS.ttsModel, voice = DEFAULTS.voice, text, signal }) {
     const res = await callApi(apiKey, {
       model,
@@ -88,6 +147,35 @@
     if (!audio) throw new Error('No audio in response: ' + summarize(res));
     const rate = Number(/rate=(\d+)/.exec(audio.mime_type || '')?.[1]) || 24000;
     return { data: audio.data, rate, response: res };
+  }
+
+  // A focused, on-demand answer for a paused point in a public YouTube video.
+  // The Interactions API currently rejects `processing` on direct YouTube URL
+  // inputs, so anchor the full-video request to the playhead in the prompt.
+  async function describeMoment({ apiKey, model = DEFAULTS.videoModel, videoUrl, currentSec, durationSec, question, conversation = [], signal }) {
+    const userQuestion = String(question || 'Describe this moment.').trim().slice(0, 500);
+    const history = conversation.slice(-4).map((turn) => `Viewer: ${turn.question}\nAssistant: ${turn.answer}`).join('\n');
+    const res = await callApi(apiKey, {
+      model,
+      input: [
+        { type: 'video', uri: videoUrl },
+        {
+          type: 'text',
+          text: [
+            'Answer in English for a blind or low-vision viewer.',
+            `The viewer paused at ${formatTime(currentSec)}.`,
+            `Focus on what is visible at that exact moment and the important events from the preceding ${MOMENT_CONTEXT_SECONDS} seconds.`,
+            `Viewer question: ${userQuestion}`,
+            history ? `Earlier questions about this same paused scene:\n${history}` : '',
+            'Answer the viewer question in 2–4 concise sentences. Include actions, people, setting, meaningful expressions, and on-screen text when relevant.',
+            'Do not invent details or reveal anything from after the paused moment.',
+          ].join(' '),
+        },
+      ],
+    }, signal);
+    const text = findContent(res, 'text').map((c) => c.text).join('').replace(/\s+/g, ' ').trim();
+    if (!text) throw new Error('No scene description in response: ' + summarize(res));
+    return text;
   }
 
   // Content blocks of one type from the model's output steps (skips thoughts and user input).
@@ -163,19 +251,45 @@
     return `${String(m).padStart(2, '0')}:${s}`;
   }
 
-  // Seconds, sorted, non-overlapping, inside the video.
+  // Seconds, sorted, non-overlapping, inside the video, and short enough for
+  // the advertised speech gap. Model JSON is structured, but not semantically
+  // guaranteed, so treat timing and word limits as untrusted input.
   function normalizeCues(cues, durationSec) {
     const sorted = (cues || [])
-      .map((c) => ({ start: parseTime(c.start), end: parseTime(c.end), maxWords: c.max_words, text: String(c.text || '').trim() }))
+      .map((c) => ({ start: parseTime(c.start), end: parseTime(c.end), text: String(c.text || '').trim() }))
       .filter((c) => c.text && Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)
       .sort((a, b) => a.start - b.start);
     const out = [];
     for (const c of sorted) {
       if (durationSec && c.start >= durationSec) continue;
       if (durationSec) c.end = Math.min(c.end, durationSec);
+      c.maxWords = wordBudget(c);
+      if (c.end - c.start < MIN_GAP_SECONDS || c.maxWords < MIN_CUE_WORDS || countWords(c.text) > c.maxWords) continue;
       const prev = out[out.length - 1];
       if (prev && c.start < prev.end) continue;
       out.push(c);
+    }
+    return out;
+  }
+
+  function normalizeScenes(scenes, durationSec) {
+    const sorted = (scenes || [])
+      .map((scene) => ({
+        start: parseTime(scene.start),
+        end: parseTime(scene.end),
+        description: String(scene.description || '').trim(),
+        visibleText: String(scene.visible_text || scene.visibleText || '').trim(),
+      }))
+      .filter((scene) => scene.description && Number.isFinite(scene.start) && Number.isFinite(scene.end) && scene.end > scene.start)
+      .sort((a, b) => a.start - b.start);
+    const out = [];
+    for (const scene of sorted) {
+      if (scene.start < 0 || (durationSec && scene.start >= durationSec)) continue;
+      if (durationSec) scene.end = Math.min(scene.end, durationSec);
+      const prev = out[out.length - 1];
+      if (prev && scene.start < prev.end) scene.start = prev.end;
+      if (scene.end <= scene.start) continue;
+      out.push(scene);
     }
     return out;
   }
@@ -190,9 +304,9 @@
 
   const AutoAD = root.AutoAD || (root.AutoAD = {});
   Object.assign(AutoAD, {
-    DEFAULTS, TIMING, TRACK_SCHEMA, ApiError,
-    buildPrompt, generateTrack, renderSpeech, findContent,
-    parseTime, formatTime, normalizeCues, countWords, wordBudget, summarize,
+    DEFAULTS, TIMING, MIN_GAP_SECONDS, MIN_CUE_WORDS, MOMENT_CONTEXT_SECONDS, TRACK_SCHEMA, SCENE_SCHEMA, TRACK_CACHE_VERSION, TTS_CACHE_VERSION, SCENE_INDEX_VERSION, ApiError,
+    buildPrompt, buildSceneIndexPrompt, generateTrack, generateSceneIndex, describeMoment, renderSpeech, findContent,
+    parseTime, formatTime, normalizeCues, normalizeScenes, countWords, wordBudget, summarize,
   });
   if (typeof module !== 'undefined' && module.exports) module.exports = AutoAD;
 })(globalThis);

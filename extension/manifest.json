@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Gemini-generated audio description for YouTube, spoken in the video's own silent gaps.",
   "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
   "action": {
     "default_title": "AutoAD settings",
     "default_popup": "options.html"
@@ -15,7 +16,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["src/gemini.js", "src/audio.js", "src/player.js", "src/content.js"],
+      "js": ["src/gemini.js", "src/live.js", "src/audio.js", "src/player.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle"
     }
