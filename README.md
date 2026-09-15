@@ -22,9 +22,9 @@ Generation starts explicitly per video; opening a page alone does not spend AI q
 
 ## Preferences
 
-Speed: 0.75× / 1× / 1.5× / 2×; detail: Brief / Standard / Detailed; language style: Plain / Academic; named Gemini voices with Preview voice; tone: Calm / Cheerful / Playful. Preferences save automatically.
+The visible preferences are the named Gemini voice selector and Connection and storage. Voice preview remains in the video panel. Speed, detail, language-style and tone controls were removed from both entry points at the user's request in 0.2.2. Existing stored values remain compatible; the underlying playback and cache logic is unchanged.
 
-Speed affects narration, not YouTube's playback speed, and does not regenerate TTS. Changing voice/tone reuses text and renders the matching voice. Changing detail/style creates the corresponding track. Descriptions always obey dialogue-gap budgets; long explanations belong in paused answers. If a clip cannot fit at the allowed rate, it is skipped. A playing clip is cut off at the gap boundary rather than spoken over dialogue. No automatic pauses for ordinary narration.
+Changing voice reuses the text and renders the matching audio. Descriptions obey dialogue-gap budgets; long explanations belong in paused answers. If a clip cannot fit at the allowed rate, it is skipped. No automatic pauses for ordinary narration.
 
 ## Accessibility: Windows Narrator and macOS VoiceOver
 

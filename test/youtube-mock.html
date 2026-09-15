@@ -187,7 +187,7 @@ async function run(){
   await waitFor(()=>btn(),2000,'panel');
   check('off until explicit enable; no quota spent',calls.gen.length===0&&btn().textContent==='Enable descriptions');
   check('panel has landmark name',document.querySelector('aside').getAttribute('aria-label').includes('AutoAD'));
-  check('settings use native radio groups',document.querySelectorAll('.autoad-ui fieldset').length===5);
+  check('only voice settings remain visible',document.querySelectorAll('.autoad-ui fieldset').length===1 && !document.querySelector('.autoad-ui input[type=radio]'));
   check('live status separate from spoken answer',document.querySelector('.autoad-status').getAttribute('role')==='status'&&!document.querySelector('.autoad-line').hasAttribute('aria-live'));
   await video.play();btn().click();
   check('enable pauses video immediately',video.paused);
@@ -210,7 +210,7 @@ async function run(){
  });
  await step('Settings and cache',async()=>{
   video.pause();const n=calls.tts.length;
-  document.querySelector('input[name="autoad-speed"][value="1.5"]').click();await sleep(250);
+  await chrome.storage.local.set({speed:1.5});await sleep(250);
   check('speed changes saved without TTS',store.speed===1.5&&calls.tts.length===n);
   const gen=calls.gen.length;const select=document.querySelector('[data-setting=voice]');select.value='Kore';select.dispatchEvent(new Event('change',{bubbles:true}));
   await waitFor(()=>calls.tts.length>=n+4,5000,'new voice');

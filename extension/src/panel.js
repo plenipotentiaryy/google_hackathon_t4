@@ -16,9 +16,7 @@
           <button type="button" data-action="continue" class="autoad-continue" hidden>Continue video</button>
           <section class="autoad-card" aria-labelledby="autoad-current"><h3 id="autoad-current">Current description / answer</h3><p class="autoad-line">Enable descriptions to begin.</p><button type="button" data-action="repeat" disabled>↻ Repeat last description</button></section>
           <section class="autoad-question-block" aria-labelledby="autoad-ask-title"><h3 id="autoad-ask-title">Ask about this scene</h3><div class="autoad-row"><button type="button" class="autoad-mic" data-action="voice">Ask by voice</button><button type="button" class="autoad-ask" data-action="describe">Describe this moment</button></div><label for="autoad-question">Your question</label><div class="autoad-row"><input id="autoad-question" class="autoad-question" type="text" maxlength="500" placeholder="What is happening here?"><button type="button" class="autoad-send" data-action="send">Send question</button></div><button type="button" class="autoad-copy" data-action="copy">Copy discussion context</button></section>
-          <div class="autoad-preferences"></div>
           <fieldset><legend>Voice</legend><div class="autoad-row"><select aria-label="Narration voice" data-setting="voice"></select><button type="button" data-action="preview">Preview voice</button></div></fieldset>
-          <div class="autoad-tone"></div>
           <details class="autoad-connection"><summary>Connection and storage</summary><form class="autoad-key-form"><label for="autoad-key">Gemini API key</label><input id="autoad-key" type="password" autocomplete="off"><p class="autoad-hint">Stored in this browser. Never included in copied context.</p><button type="submit">Save API key</button></form><div class="autoad-models"></div><button type="button" data-action="clear">Clear cached descriptions</button></details>
           <p class="autoad-foot" role="status">Preferences saved automatically</p>
         </div>`;
@@ -66,68 +64,6 @@
         actions.setting("apiKey", this.$("#autoad-key").value.trim());
         this.$("#autoad-key").value = "";
       });
-      const group = (key, label, values, target) => {
-        const field = document.createElement("fieldset");
-        const legend = document.createElement("legend");
-        legend.textContent = label;
-        field.append(legend);
-        const row = document.createElement("div");
-        row.className = "autoad-choices";
-        values.forEach(([value, text]) => {
-          const label = document.createElement("label");
-          const input = document.createElement("input");
-          input.type = "radio";
-          input.name = "autoad-" + key;
-          input.value = value;
-          input.dataset.setting = key;
-          const span = document.createElement("span");
-          span.textContent = text;
-          label.append(input, span);
-          row.append(label);
-        });
-        field.append(row);
-        this.$(target).append(field);
-      };
-      group(
-        "speed",
-        "Narration speed",
-        [
-          ["0.75", "0.75×"],
-          ["1", "1×"],
-          ["1.5", "1.5×"],
-          ["2", "2×"],
-        ],
-        ".autoad-preferences",
-      );
-      group(
-        "detail",
-        "Description detail",
-        [
-          ["brief", "Brief"],
-          ["standard", "Standard"],
-          ["detailed", "Detailed"],
-        ],
-        ".autoad-preferences",
-      );
-      group(
-        "style",
-        "Language style",
-        [
-          ["plain", "Plain"],
-          ["academic", "Academic"],
-        ],
-        ".autoad-preferences",
-      );
-      group(
-        "tone",
-        "Voice tone",
-        [
-          ["calm", "Calm"],
-          ["cheerful", "Cheerful"],
-          ["playful", "Playful"],
-        ],
-        ".autoad-tone",
-      );
       for (const voice of A.VOICES)
         this.$("select").add(new Option(voice, voice));
       for (const [key, label] of [

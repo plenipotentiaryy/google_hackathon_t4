@@ -20,68 +20,6 @@ function render() {
       element.value = settings[element.dataset.setting];
   }
 }
-function group(key, title, options, target) {
-  const field = document.createElement("fieldset");
-  const legend = document.createElement("legend");
-  legend.textContent = title;
-  field.append(legend);
-  const row = document.createElement("div");
-  row.className = "autoad-choices";
-  for (const [value, text] of options) {
-    const label = document.createElement("label");
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = key;
-    input.value = value;
-    input.dataset.setting = key;
-    const span = document.createElement("span");
-    span.textContent = text;
-    label.append(input, span);
-    row.append(label);
-  }
-  field.append(row);
-  $(target).append(field);
-}
-group(
-  "speed",
-  "Narration speed",
-  [
-    ["0.75", "0.75×"],
-    ["1", "1×"],
-    ["1.5", "1.5×"],
-    ["2", "2×"],
-  ],
-  "preferences",
-);
-group(
-  "detail",
-  "Description detail",
-  [
-    ["brief", "Brief"],
-    ["standard", "Standard"],
-    ["detailed", "Detailed"],
-  ],
-  "preferences",
-);
-group(
-  "style",
-  "Language style",
-  [
-    ["plain", "Plain"],
-    ["academic", "Academic"],
-  ],
-  "preferences",
-);
-group(
-  "tone",
-  "Voice tone",
-  [
-    ["calm", "Calm"],
-    ["cheerful", "Cheerful"],
-    ["playful", "Playful"],
-  ],
-  "tone-group",
-);
 for (const voice of A.VOICES) $("voice").add(new Option(voice, voice));
 async function save(key, value) {
   if (!storage) return;
